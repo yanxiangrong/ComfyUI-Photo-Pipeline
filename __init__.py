@@ -10,12 +10,30 @@ except ModuleNotFoundError as exc:
 else:
     from . import routes as _routes  # noqa: F401 - registers the ComfyUI route
     from .nodes.create_preview import LemioCreatePreview
+    from .nodes.full_pipeline import (
+        LemioAnalyzePhoto,
+        LemioArchivePhoto,
+        LemioCreateFinalPreview,
+        LemioNaturalRetouch,
+        LemioProcessPhoto,
+        LemioValidateDevelopParameters,
+    )
     from .nodes.prepare_photo import LemioPreparePhoto
     from .nodes.upload_photo import LemioUploadPhoto
 
     class LemioPhotoPipelineExtension(ComfyExtension):
         async def get_node_list(self):
-            return [LemioUploadPhoto, LemioPreparePhoto, LemioCreatePreview]
+            return [
+                LemioUploadPhoto,
+                LemioPreparePhoto,
+                LemioCreatePreview,
+                LemioAnalyzePhoto,
+                LemioValidateDevelopParameters,
+                LemioProcessPhoto,
+                LemioNaturalRetouch,
+                LemioCreateFinalPreview,
+                LemioArchivePhoto,
+            ]
 
     async def comfy_entrypoint():
         return LemioPhotoPipelineExtension()

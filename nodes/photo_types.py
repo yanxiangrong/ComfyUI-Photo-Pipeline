@@ -56,6 +56,34 @@ class WorkingPhoto:
     sha256: str
 
 
+@dataclass(frozen=True, slots=True)
+class DevelopParameters:
+    values: dict[str, Any]
+    analysis: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class ProcessedPhoto:
+    path: str
+    filename: str
+    mime_type: str
+    size: int
+    width: int
+    height: int
+    sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class FinalPhoto:
+    path: str
+    filename: str
+    mime_type: str
+    size: int
+    width: int
+    height: int
+    sha256: str
+
+
 def max_upload_bytes() -> int:
     return _positive_mb("PHOTO_PIPELINE_MAX_UPLOAD_MB", 100)
 

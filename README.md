@@ -1,8 +1,6 @@
 # ComfyUI Photo Pipeline
 
-ComfyUI Photo Pipeline adds a memory-conscious photo-ingestion path to the ComfyUI canvas. Phase 1 uploads a photo, sends it to an existing `photo-processor` `/prepare` endpoint, and creates a bounded preview tensor.
-
-This release deliberately does **not** implement GPT analysis, development-parameter validation, `/process`, RawTherapee orchestration, local generation models, AI retouching, final naming, or archive writes.
+ComfyUI Photo Pipeline adds a memory-conscious, end-to-end photo workflow to the ComfyUI canvas. It uploads and prepares a photo, asks a vision model for schema-constrained development parameters, calls RawTherapee through `photo-processor`, performs conservative natural AI retouching, generates a safe final filename, previews the result, and archives the working JPEG, parameters, and final image.
 
 ## Workflow
 
@@ -10,7 +8,15 @@ This release deliberately does **not** implement GPT analysis, development-param
 flowchart LR
   A[Lemio · Upload Photo] -->|LEMIO_SOURCE_PHOTO| B[Lemio · Prepare Photo]
   B -->|LEMIO_WORKING_PHOTO| C[Lemio · Create Preview]
-  C -->|IMAGE| D[Preview Image]
+  C -->|IMAGE| D[Lemio · Analyze Photo]
+  D --> E[Lemio · Validate Develop Parameters]
+  E --> F[Lemio · Process Photo]
+  F --> G[Lemio · Natural Retouch]
+  G --> H[Lemio · Create Final Preview]
+  H --> I[Preview Image]
+  B --> J[Lemio · Archive Photo]
+  E --> J
+  G --> J
 ```
 
 The full-size source and working JPEG travel as immutable metadata objects containing controlled file references, sizes, hashes, and format metadata. They are never placed in workflow JSON and are never converted to tensors. Only the resized preview becomes a ComfyUI `IMAGE` tensor (BHWC float32, 0–1), keeping CPU memory use predictable.
@@ -38,6 +44,15 @@ The cache identity includes source SHA-256, a non-secret hash of the processor U
 
 Accepts `LEMIO_WORKING_PHOTO`; `max_width` defaults to 1600 and `max_height` to 1200 (both 64–4096). It uses Lanczos resizing, preserves aspect ratio, and never enlarges a smaller photo. Outputs `IMAGE`, width, and height. Connect `IMAGE` to ComfyUI's built-in **Preview Image** node.
 
+### Analysis, development, retouch, and archive
+
+- **Lemio · Analyze Photo** sends only the bounded preview to either an OpenAI-compatible Responses API or Amazon Bedrock Converse and returns strict schema-v1 parameters plus a retouch prompt.
+- **Lemio · Validate Develop Parameters** independently rejects missing, extra, mistyped, non-enum, or out-of-range fields.
+- **Lemio · Process Photo** posts the unchanged working JPEG and validated JSON to `${PHOTO_PROCESSOR_URL}/process` and preserves the returned JPEG bytes.
+- **Lemio · Natural Retouch** uses an OpenAI-compatible Images Edit endpoint or Amazon Nova Canvas. Its fixed prompt preserves identity, geometry, age, pose, clothing, background, framing, and realistic skin texture.
+- **Lemio · Create Final Preview** converts only a bounded final preview to a tensor.
+- **Lemio · Archive Photo** sends working image, final image, canonical parameters, execution ID, and timestamp to `${PHOTO_ARCHIVE_URL}/archive`. It is an output node and intentionally creates a new append-only archive per execution.
+
 ## Installation
 
 From the ComfyUI custom-node directory:
@@ -51,7 +66,7 @@ python -m pip install -r requirements.txt
 
 Alternatively, use **ComfyUI Manager → Install via Git URL**, paste this repository's Git URL, and install. Restart ComfyUI after installation. The implementation uses the current ComfyUI V3 API (`comfy_api.latest`, `ComfyExtension`, and `comfy_entrypoint`) and the official frontend `app.registerExtension` mechanism; it requires a ComfyUI build that provides that API.
 
-No model, GPU package, database, worker, or additional listening service is installed. Torch, Pillow, and NumPy are supplied by ComfyUI; the only runtime dependency added here is `httpx`.
+No local model, GPU package, database, worker, or additional listening service is installed. Torch, Pillow, and NumPy are supplied by ComfyUI; runtime HTTP/AWS dependencies are `httpx` and `boto3`.
 
 ## Portainer / Docker configuration
 
@@ -62,6 +77,12 @@ services:
   comfyui:
     environment:
       PHOTO_PROCESSOR_URL: http://photo-processor:8000
+      PHOTO_ARCHIVE_URL: http://photo-archive:8000
+      PHOTO_AI_PROVIDER: openai
+      OPENAI_BASE_URL: https://your-compatible-gateway.example/v1
+      OPENAI_API_KEY: supplied-by-secret-management
+      PHOTO_ANALYSIS_MODEL: your-vision-model
+      PHOTO_RETOUCH_MODEL: your-image-edit-model
       PHOTO_PIPELINE_MAX_UPLOAD_MB: "100"
       PHOTO_PIPELINE_MAX_RESPONSE_MB: "100"
       PHOTO_PIPELINE_CONNECT_TIMEOUT_SECONDS: "10"
@@ -76,11 +97,13 @@ networks:
 
 Do not publish a new port for this extension. Its upload route is registered on the existing ComfyUI server and called through `api.fetchApi`, so the existing loopback binding, tunnel, session, and authentication gateway remain in the request path. `PHOTO_PROCESSOR_URL` is read only on the server and is not stored in workflow JSON.
 
+For a future Amazon Bedrock switch, set `PHOTO_AI_PROVIDER=bedrock`, `AWS_REGION`, `BEDROCK_ANALYSIS_MODEL` (default `us.amazon.nova-lite-v1:0`) and `BEDROCK_RETOUCH_MODEL` (default `amazon.nova-canvas-v1:0`). Use the normal AWS SDK credential chain, an attached workload role, or `AWS_BEARER_TOKEN_BEDROCK`; never put AWS credentials in a workflow. OpenAI-compatible and Bedrock configuration is selected exclusively server-side.
+
 ## Shortest usage path
 
 1. Restart the ComfyUI container after installation and environment changes.
-2. Add **Lemio · Upload Photo**, **Lemio · Prepare Photo**, **Lemio · Create Preview**, and built-in **Preview Image**.
-3. Connect them in that order, choose or drop a photo, then queue the prompt.
+2. Load `examples/Lemio Full Photo Pipeline.json`, or add the nodes shown in the workflow diagram.
+3. Choose or drop a photo, then queue the prompt from **Lemio · Archive Photo** or **Preview Image**.
 4. For the defaults, confirm the displayed preview is no larger than 1600 × 1200.
 
 ## Storage and cleanup
