@@ -74,6 +74,8 @@ class LemioProcessPhoto(io.ComfyNode):
 
     @classmethod
     def fingerprint_inputs(cls, working_photo: WorkingPhoto, develop_parameters: DevelopParameters):
+        if working_photo is None or develop_parameters is None:
+            return float("nan")
         return f"{working_photo.sha256}:{json.dumps(develop_parameters.values, sort_keys=True)}"
 
     @classmethod

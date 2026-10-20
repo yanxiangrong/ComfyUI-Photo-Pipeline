@@ -26,6 +26,8 @@ class LemioPreparePhoto(io.ComfyNode):
 
     @classmethod
     def fingerprint_inputs(cls, source_photo: SourcePhoto):
+        if source_photo is None:
+            return float("nan")
         url_id = hashlib.sha256(processor_url().encode()).hexdigest()[:16]
         return f"{source_photo.sha256}:{url_id}:prepare-v1"
 
