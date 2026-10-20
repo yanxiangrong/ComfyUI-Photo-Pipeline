@@ -183,7 +183,7 @@ def analyze_preview(tensor, client: httpx.Client | None = None) -> tuple[Develop
         raise LemioPhotoError("Lemio · Analyze Photo: OPENAI_API_KEY is not configured")
     data_url = "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode()
     body = {
-        "model": os.getenv("PHOTO_ANALYSIS_MODEL", "gpt-5-mini"),
+        "model": os.getenv("PHOTO_ANALYSIS_MODEL", "gpt-6-luna"),
         "store": False,
         "input": [
             {
@@ -302,7 +302,6 @@ def natural_retouch(
 ):
     source = safe_child(processed_root, processed.path)
     source_bytes = source.read_bytes()
-    data_url = "data:image/jpeg;base64," + base64.b64encode(source_bytes).decode()
     instruction = (
         "Edit this photograph naturally and conservatively. Preserve identity, facial "
         "geometry, age, body shape, pose, hair, clothing, background, framing and "
@@ -350,15 +349,22 @@ def natural_retouch(
     key = os.getenv("OPENAI_API_KEY", "").strip()
     if not key:
         raise LemioPhotoError("Lemio · Natural Retouch: OPENAI_API_KEY is not configured")
-    body = {
-        "model": os.getenv("PHOTO_RETOUCH_MODEL", "gpt-image-2.5-sunburst"),
-        "images": [{"image_url": data_url}],
+    # Image-edit providers generate at bounded resolutions.  Downscaling the request
+    # avoids very slow relay uploads while preserving the untouched processed master.
+    with Image.open(io.BytesIO(source_bytes)) as original:
+        edit_input = original.convert("RGB")
+        edit_input.thumbnail((1536, 1536), Image.Resampling.LANCZOS)
+        edit_buffer = io.BytesIO()
+        edit_input.save(edit_buffer, "JPEG", quality=95)
+        edit_bytes = edit_buffer.getvalue()
+    form = {
+        "model": os.getenv("PHOTO_RETOUCH_MODEL", "gpt-image-1.5"),
         "prompt": instruction,
         "input_fidelity": "high",
         "output_format": "jpeg",
-        "output_compression": 95,
+        "output_compression": "95",
         "size": "auto",
-        "n": 1,
+        "n": "1",
     }
     own = client is None
     http = client or httpx.Client(timeout=_timeout(600))
@@ -366,7 +372,8 @@ def natural_retouch(
         response = http.post(
             _service_url("OPENAI_BASE_URL", "https://api.openai.com/v1") + "/images/edits",
             headers={"Authorization": f"Bearer {key}"},
-            json=body,
+            data=form,
+            files={"image": (processed.filename, edit_bytes, "image/jpeg")},
         )
         if not response.is_success:
             raise LemioPhotoError(

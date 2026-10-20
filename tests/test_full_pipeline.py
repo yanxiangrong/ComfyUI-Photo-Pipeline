@@ -117,8 +117,11 @@ def test_openai_retouch_and_archive(monkeypatch, tmp_path, jpeg_bytes):
     processed = working(processed_root, image, (64, 32))
 
     def edit_handler(request):
-        body = json.loads(request.content)
-        assert body["input_fidelity"] == "high"
+        body = request.read()
+        assert b'name="image"' in body
+        assert b'name="input_fidelity"' in body
+        assert b"high" in body
+        assert b"\xff\xd8\xff" in body
         return httpx.Response(200, json={"data": [{"b64_json": base64.b64encode(image).decode()}]})
 
     final = natural_retouch(

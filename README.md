@@ -81,8 +81,8 @@ services:
       PHOTO_AI_PROVIDER: openai
       OPENAI_BASE_URL: https://your-compatible-gateway.example/v1
       OPENAI_API_KEY: supplied-by-secret-management
-      PHOTO_ANALYSIS_MODEL: your-vision-model
-      PHOTO_RETOUCH_MODEL: your-image-edit-model
+      PHOTO_ANALYSIS_MODEL: gpt-6-luna
+      PHOTO_RETOUCH_MODEL: gpt-image-1.5
       PHOTO_PIPELINE_MAX_UPLOAD_MB: "100"
       PHOTO_PIPELINE_MAX_RESPONSE_MB: "100"
       PHOTO_PIPELINE_CONNECT_TIMEOUT_SECONDS: "10"
@@ -108,7 +108,7 @@ For a future Amazon Bedrock switch, set `PHOTO_AI_PROVIDER=bedrock`, `AWS_REGION
 
 ## Storage and cleanup
 
-Uploads are intentionally retained in `input/lemio_uploads/`, and prepared JPEGs in `output/lemio_working/`, so cached runs and reopened workflows remain valid. Phase 1 never writes to `/data2` or an archive. Administrators must define a retention/backup cleanup policy for these two directories; deleting referenced files will make old workflows require another upload or prepare run.
+Uploads are intentionally retained in `input/lemio_uploads/`, and prepared JPEGs in `output/lemio_working/`, so cached runs and reopened workflows remain valid. Successful full-pipeline runs send an append-only copy to `photo-archive`; the plugin never writes directly to the archive host path. Administrators must define retention and backup policies for uploads, working files, generated finals, and archive storage. Deleting referenced input or working files will make old workflows require another upload or prepare run.
 
 The plugin rejects absolute paths, traversal, symlink escape, unsupported extensions, oversized uploads/responses, invalid ordinary-image signatures, and changed checksums. Temporary files are removed after failures, and final working files appear only after an atomic rename.
 
