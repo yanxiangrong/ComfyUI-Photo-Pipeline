@@ -858,7 +858,12 @@ def archive_photo(working, final, params, working_root, final_root, execution_id
         "manifest_version": 2,
         "pipeline_version": "0.2.0",
         "develop": validate_develop(params.values),
-        "development": params.provenance,
+        "development": params.provenance or {
+            "initial_parameters": params.values,
+            "review_mode": "关闭",
+            "review_count": 0,
+            "reviews": [],
+        },
         "retouch": final.provenance,
         "quality": quality,
         "analysis_model": os.getenv("BEDROCK_ANALYSIS_MODEL", "us.openai.gpt-6.1-sol")

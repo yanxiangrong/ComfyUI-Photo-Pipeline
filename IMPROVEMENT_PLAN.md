@@ -13,6 +13,10 @@ administrators must protect archive access and backups accordingly.
 Final images automatically undergo checksum, decode, dimension, blank/black/white collapse checks.
 Aspect changes and large pixel differences generate warnings in the manifest, not aesthetic claims.
 This does not detect identity drift, bad hands, distorted clothing or anatomical errors.
+The release also performs a separate vision comparison for obvious people-count changes, replaced
+scenes and severe anatomical defects. A flagged result or failed review request stops automatic
+archiving; it does not trigger another image edit. This adds one analysis call. It remains
+probabilistic and does not replace visual portrait acceptance or biometric identity checks.
 
 ## Beauty template calibration — documentation only
 
