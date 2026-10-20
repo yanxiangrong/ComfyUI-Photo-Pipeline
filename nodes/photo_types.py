@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +60,7 @@ class WorkingPhoto:
 class DevelopParameters:
     values: dict[str, Any]
     analysis: str = ""
+    provenance: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +95,7 @@ class FinalPhoto:
     width: int
     height: int
     sha256: str
+    provenance: dict[str, Any] = field(default_factory=dict)
 
 
 def max_upload_bytes() -> int:

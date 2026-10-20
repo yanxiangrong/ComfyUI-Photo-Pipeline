@@ -256,6 +256,9 @@ def test_openai_retouch_and_archive(monkeypatch, tmp_path, jpeg_bytes):
     def archive_handler(request):
         assert request.url.path == "/archive"
         assert b'name="working"' in request.read()
+        assert b'"manifest_version":2' in request.read()
+        assert b'"quality"' in request.read()
+        assert b'"direction"' in request.read()
         return httpx.Response(201, json={"relative_directory": "2026-01-01-000000-test"})
 
     relative = archive_photo(
@@ -272,9 +275,7 @@ def test_openai_retouch_and_archive(monkeypatch, tmp_path, jpeg_bytes):
 
 def test_bedrock_style_transfer_retouch(monkeypatch, tmp_path, jpeg_bytes):
     monkeypatch.setenv("PHOTO_AI_PROVIDER", "bedrock")
-    monkeypatch.setenv(
-        "BEDROCK_RETOUCH_MODEL", "us.stability.stable-style-transfer-v1:0"
-    )
+    monkeypatch.setenv("BEDROCK_RETOUCH_MODEL", "us.stability.stable-style-transfer-v1:0")
     image = jpeg_bytes((64, 32))
     processed_root = tmp_path / "processed"
     processed = working(processed_root, image, (64, 32))

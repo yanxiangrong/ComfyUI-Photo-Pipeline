@@ -42,9 +42,7 @@ class LemioRetouchDirection(io.ComfyNode):
             inputs=[
                 io.Combo.Input("preset", options=list(PRESETS), default="自然美颜"),
                 io.Combo.Input("strength", options=["低", "中", "高"], default="中"),
-                io.Combo.Input(
-                    "skin", options=["跟随模板", "低", "中", "高"], default="跟随模板"
-                ),
+                io.Combo.Input("skin", options=["跟随模板", "低", "中", "高"], default="跟随模板"),
                 io.Combo.Input(
                     "face",
                     options=["跟随模板", "关闭", "低", "中", "高"],
@@ -58,9 +56,7 @@ class LemioRetouchDirection(io.ComfyNode):
                 io.Combo.Input(
                     "lighting", options=["跟随模板", "低", "中", "高"], default="跟随模板"
                 ),
-                io.Combo.Input(
-                    "background", options=["严格保持", "轻微整理"], default="严格保持"
-                ),
+                io.Combo.Input("background", options=["严格保持", "轻微整理"], default="严格保持"),
                 io.String.Input(
                     "custom_instructions",
                     multiline=True,
@@ -72,9 +68,7 @@ class LemioRetouchDirection(io.ComfyNode):
         )
 
     @classmethod
-    def execute(
-        cls, preset, strength, skin, face, body, lighting, background, custom_instructions
-    ):
+    def execute(cls, preset, strength, skin, face, body, lighting, background, custom_instructions):
         result = make_retouch_direction(
             preset, strength, skin, face, body, lighting, background, custom_instructions
         )
@@ -123,7 +117,9 @@ class LemioValidateDevelopParameters(io.ComfyNode):
     @classmethod
     def execute(cls, develop_parameters: DevelopParameters):
         values = validate_develop(develop_parameters.values)
-        result = DevelopParameters(values, develop_parameters.analysis)
+        result = DevelopParameters(
+            values, develop_parameters.analysis, develop_parameters.provenance
+        )
         return io.NodeOutput(result, json.dumps(values, ensure_ascii=False, separators=(",", ":")))
 
 

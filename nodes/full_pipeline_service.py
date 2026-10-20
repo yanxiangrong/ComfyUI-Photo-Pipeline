@@ -6,7 +6,9 @@ import io
 import json
 import os
 import re
+import time
 import uuid
+from dataclasses import asdict, replace
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -25,6 +27,7 @@ from .photo_types import (
     safe_child,
     sha256_file,
 )
+from .quality_service import validate_retouch_result
 
 SPECS = {
     "schema_version": ("integer", 1, 1),
@@ -138,9 +141,7 @@ def make_retouch_direction(
     custom = " ".join(str(custom_instructions).split())
     if len(custom) > 1000:
         raise LemioPhotoError("Lemio · Retouch Direction: custom instructions exceed 1000 chars")
-    return RetouchDirection(
-        preset, strength, skin, face, body, lighting, background, custom
-    )
+    return RetouchDirection(preset, strength, skin, face, body, lighting, background, custom)
 
 
 def retouch_direction_prompt(direction: RetouchDirection | None) -> str:
@@ -363,11 +364,11 @@ def review_develop(
     else:
         key = os.getenv("OPENAI_API_KEY", "").strip()
         if not key:
-            raise LemioPhotoError(
-                "Lemio · Develop With Feedback: OPENAI_API_KEY is not configured"
-            )
+            raise LemioPhotoError("Lemio · Develop With Feedback: OPENAI_API_KEY is not configured")
+
         def data_url(value):
             return "data:image/jpeg;base64," + base64.b64encode(value).decode()
+
         body = {
             "model": os.getenv("PHOTO_ANALYSIS_MODEL", "gpt-6-luna"),
             "store": False,
@@ -408,8 +409,7 @@ def review_develop(
             )
             if not response.is_success:
                 raise LemioPhotoError(
-                    "Lemio · Develop With Feedback: OpenAI returned "
-                    f"HTTP {response.status_code}"
+                    f"Lemio · Develop With Feedback: OpenAI returned HTTP {response.status_code}"
                 )
             payload = response.json()
             text = payload.get("output_text")
@@ -454,9 +454,11 @@ def develop_with_feedback(
     review_counts = {"关闭": 0, "一次": 1, "最多两次": 2}
     if mode not in review_counts:
         raise LemioPhotoError("Lemio · Develop With Feedback: invalid review mode")
+    started = time.monotonic()
     current = DevelopParameters(validate_develop(initial.values), initial.analysis)
     processed = process_photo(working, current, working_root, processed_root)
     messages = []
+    history = []
     for index in range(review_counts[mode]):
         revised, review, accepted = review_develop(
             working,
@@ -467,12 +469,28 @@ def develop_with_feedback(
             direction,
         )
         messages.append(f"review {index + 1}: {review or ('accepted' if accepted else 'revised')}")
+        history.append(
+            {
+                "round": index + 1,
+                "accepted": accepted,
+                "summary": review,
+                "before": current.values,
+                "proposed": revised.values,
+            }
+        )
         if accepted:
             break
         current = revised
         processed = process_photo(working, current, working_root, processed_root)
     status = "; ".join(messages) if messages else "feedback disabled"
-    return processed, current, status
+    provenance = {
+        "initial_parameters": initial.values,
+        "review_mode": mode,
+        "reviews": history,
+        "review_count": len(history),
+        "duration_seconds": round(time.monotonic() - started, 3),
+    }
+    return processed, replace(current, provenance=provenance), status
 
 
 def _provider() -> str:
@@ -570,8 +588,7 @@ def analyze_preview(
                             "Analyze exposure, white balance, dynamic range, noise, "
                             "sharpness and portrait needs. Return relative adjustments "
                             "only. Do not change identity, geometry, pose, clothing, "
-                            "background or composition. "
-                            + direction_text
+                            "background or composition. " + direction_text
                         ),
                     },
                     {"type": "input_image", "image_url": data_url, "detail": "high"},
@@ -680,7 +697,29 @@ def natural_retouch(
     client=None,
     direction: RetouchDirection | None = None,
 ):
+    started = time.monotonic()
     source = safe_child(processed_root, processed.path)
+
+    def finish(content):
+        result = _save_final(content, final_root)
+        quality = validate_retouch_result(result, processed, final_root, processed_root)
+        provider = _provider()
+        model = (
+            os.getenv("BEDROCK_RETOUCH_MODEL", "us.stability.stable-style-transfer-v1:0")
+            if provider == "bedrock"
+            else os.getenv("PHOTO_RETOUCH_MODEL", "gpt-image-2.5-sunburst")
+        )
+        return replace(
+            result,
+            provenance={
+                "provider": provider,
+                "retouch_model": model,
+                "direction": asdict(direction or make_retouch_direction()),
+                "duration_seconds": round(time.monotonic() - started, 3),
+                "quality": quality,
+            },
+        )
+
     source_bytes = source.read_bytes()
     instruction = (
         "Edit this portrait according to the selected beauty direction. Preserve identity, "
@@ -693,9 +732,7 @@ def natural_retouch(
     )
     if _provider() == "bedrock":
         try:
-            model = os.getenv(
-                "BEDROCK_RETOUCH_MODEL", "us.stability.stable-style-transfer-v1:0"
-            )
+            model = os.getenv("BEDROCK_RETOUCH_MODEL", "us.stability.stable-style-transfer-v1:0")
             with Image.open(io.BytesIO(source_bytes)) as original:
                 width, height = original.size
                 prepared = original.convert("RGB")
@@ -740,7 +777,7 @@ def natural_retouch(
             )
             payload = json.loads(response["body"].read())
             content = base64.b64decode(payload["images"][0], validate=True)
-            return _save_final(content, final_root)
+            return finish(content)
         except Exception as exc:
             raise LemioPhotoError("Lemio · Natural Retouch: Amazon Bedrock request failed") from exc
 
@@ -776,7 +813,7 @@ def natural_retouch(
         if not encoded:
             raise LemioPhotoError("Lemio · Natural Retouch: response contained no image")
         content = base64.b64decode(encoded, validate=True)
-        return _save_final(content, final_root)
+        return finish(content)
     except (httpx.HTTPError, ValueError) as exc:
         if isinstance(exc, LemioPhotoError):
             raise
@@ -806,6 +843,32 @@ def _save_final(content: bytes, final_root: Path) -> FinalPhoto:
 def archive_photo(working, final, params, working_root, final_root, execution_id, client=None):
     working_path = safe_child(working_root, working.path)
     final_path = safe_child(final_root, final.path)
+    quality = final.provenance.get("quality") or validate_retouch_result(
+        final, working, final_root, working_root
+    )
+    manifest = {
+        "manifest_version": 2,
+        "pipeline_version": "0.2.0",
+        "develop": validate_develop(params.values),
+        "development": params.provenance,
+        "retouch": final.provenance,
+        "quality": quality,
+        "analysis_model": os.getenv("BEDROCK_ANALYSIS_MODEL", "us.openai.gpt-6.1-sol")
+        if _provider() == "bedrock"
+        else os.getenv("PHOTO_ANALYSIS_MODEL", "gpt-6-luna"),
+        "working": {
+            "sha256": working.sha256,
+            "size": working.size,
+            "width": working.width,
+            "height": working.height,
+        },
+        "final": {
+            "sha256": final.sha256,
+            "size": final.size,
+            "width": final.width,
+            "height": final.height,
+        },
+    }
     own = client is None
     http = client or httpx.Client(timeout=_timeout())
     headers = {}
@@ -822,9 +885,7 @@ def archive_photo(working, final, params, working_root, final_root, execution_id
                     "final": (final.filename, f, final.mime_type),
                 },
                 data={
-                    "parameters": json.dumps(
-                        validate_develop(params.values), separators=(",", ":")
-                    ),
+                    "parameters": json.dumps(manifest, separators=(",", ":"), ensure_ascii=False),
                     "execution_id": re.sub(r"[^A-Za-z0-9_-]", "-", str(execution_id))[:128]
                     or uuid.uuid4().hex,
                     "processed_at": datetime.now().astimezone().isoformat(),
