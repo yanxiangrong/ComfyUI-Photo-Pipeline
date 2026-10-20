@@ -82,11 +82,12 @@ services:
       OPENAI_BASE_URL: https://your-compatible-gateway.example/v1
       OPENAI_API_KEY: supplied-by-secret-management
       PHOTO_ANALYSIS_MODEL: gpt-6-luna
-      PHOTO_RETOUCH_MODEL: gpt-image-1.5
+      PHOTO_RETOUCH_MODEL: gpt-image-2.5-sunburst
       PHOTO_PIPELINE_MAX_UPLOAD_MB: "100"
       PHOTO_PIPELINE_MAX_RESPONSE_MB: "100"
       PHOTO_PIPELINE_CONNECT_TIMEOUT_SECONDS: "10"
       PHOTO_PIPELINE_READ_TIMEOUT_SECONDS: "300"
+      PHOTO_RETOUCH_READ_TIMEOUT_SECONDS: "1200"
     networks:
       - app-network
 

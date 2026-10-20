@@ -64,6 +64,15 @@ def _timeout(read_default: float = 300) -> httpx.Timeout:
     )
 
 
+def _retouch_timeout() -> httpx.Timeout:
+    return httpx.Timeout(
+        connect=float(os.getenv("PHOTO_PIPELINE_CONNECT_TIMEOUT_SECONDS", "10")),
+        read=float(os.getenv("PHOTO_RETOUCH_READ_TIMEOUT_SECONDS", "1200")),
+        write=float(os.getenv("PHOTO_PIPELINE_READ_TIMEOUT_SECONDS", "300")),
+        pool=10,
+    )
+
+
 def validate_develop(values: dict) -> dict:
     if not isinstance(values, dict) or set(values) != set(SPECS):
         raise LemioPhotoError("Develop parameters have missing or extra fields")
@@ -349,16 +358,8 @@ def natural_retouch(
     key = os.getenv("OPENAI_API_KEY", "").strip()
     if not key:
         raise LemioPhotoError("Lemio · Natural Retouch: OPENAI_API_KEY is not configured")
-    # Image-edit providers generate at bounded resolutions.  Downscaling the request
-    # avoids very slow relay uploads while preserving the untouched processed master.
-    with Image.open(io.BytesIO(source_bytes)) as original:
-        edit_input = original.convert("RGB")
-        edit_input.thumbnail((1536, 1536), Image.Resampling.LANCZOS)
-        edit_buffer = io.BytesIO()
-        edit_input.save(edit_buffer, "JPEG", quality=95)
-        edit_bytes = edit_buffer.getvalue()
     form = {
-        "model": os.getenv("PHOTO_RETOUCH_MODEL", "gpt-image-1.5"),
+        "model": os.getenv("PHOTO_RETOUCH_MODEL", "gpt-image-2.5-sunburst"),
         "prompt": instruction,
         "input_fidelity": "high",
         "output_format": "jpeg",
@@ -367,13 +368,13 @@ def natural_retouch(
         "n": "1",
     }
     own = client is None
-    http = client or httpx.Client(timeout=_timeout(600))
+    http = client or httpx.Client(timeout=_retouch_timeout())
     try:
         response = http.post(
             _service_url("OPENAI_BASE_URL", "https://api.openai.com/v1") + "/images/edits",
             headers={"Authorization": f"Bearer {key}"},
             data=form,
-            files={"image": (processed.filename, edit_bytes, "image/jpeg")},
+            files={"image": (processed.filename, source_bytes, processed.mime_type)},
         )
         if not response.is_success:
             raise LemioPhotoError(

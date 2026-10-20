@@ -103,6 +103,7 @@ class LemioNaturalRetouch(io.ComfyNode):
                 io.String.Input("retouch_prompt", multiline=True),
             ],
             outputs=[FINAL.Output("final_photo"), io.String.Output("filename")],
+            not_idempotent=True,
         )
 
     @classmethod
