@@ -9,6 +9,10 @@ Final retouching automatically checks checksums, image decoding, dimensions and 
 Warnings and the processing history are archived in version-2 `parameters.json`; final develop
 parameters are under `develop`, with template/model information under `retouch`. Historical flat
 parameter files are unchanged. Checks do not certify identity, anatomy or beauty quality.
+An additional vision-model comparison blocks obvious added/removed people, replaced scenes and
+severe anatomy defects before automatic archive. It uses the configured analysis provider/model,
+adds one analysis request per retouch, fails explicitly on request errors, and never retries retouch
+or switches models. It is a probabilistic check and does not guarantee identity fidelity.
 
 ## Workflow
 

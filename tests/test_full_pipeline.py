@@ -231,6 +231,20 @@ def test_openai_retouch_and_archive(monkeypatch, tmp_path, jpeg_bytes):
     processed = working(processed_root, image, (64, 32))
 
     def edit_handler(request):
+        if request.url.path.endswith("/responses"):
+            return httpx.Response(
+                200,
+                json={
+                    "output_text": json.dumps(
+                        {
+                            "people_added_or_removed": False,
+                            "main_scene_replaced": False,
+                            "severe_anatomy_defect": False,
+                            "review": "faithful",
+                        }
+                    )
+                },
+            )
         body = request.read()
         assert b'name="image"' in body
         assert b'name="input_fidelity"' in body
@@ -281,6 +295,26 @@ def test_bedrock_style_transfer_retouch(monkeypatch, tmp_path, jpeg_bytes):
     processed = working(processed_root, image, (64, 32))
 
     class Bedrock:
+        def converse(self, **kwargs):
+            return {
+                "output": {
+                    "message": {
+                        "content": [
+                            {
+                                "toolUse": {
+                                    "input": {
+                                        "people_added_or_removed": False,
+                                        "main_scene_replaced": False,
+                                        "severe_anatomy_defect": False,
+                                        "review": "faithful",
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+
         def invoke_model(self, **kwargs):
             assert kwargs["modelId"] == "us.stability.stable-style-transfer-v1:0"
             request = json.loads(kwargs["body"])

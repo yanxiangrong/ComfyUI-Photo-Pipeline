@@ -28,6 +28,7 @@ from .photo_types import (
     sha256_file,
 )
 from .quality_service import validate_retouch_result
+from .semantic_quality import semantic_quality
 
 SPECS = {
     "schema_version": ("integer", 1, 1),
@@ -703,6 +704,9 @@ def natural_retouch(
     def finish(content):
         result = _save_final(content, final_root)
         quality = validate_retouch_result(result, processed, final_root, processed_root)
+        quality["semantic"] = semantic_quality(
+            result, processed, final_root, processed_root, client=client
+        )
         provider = _provider()
         model = (
             os.getenv("BEDROCK_RETOUCH_MODEL", "us.stability.stable-style-transfer-v1:0")
@@ -722,7 +726,11 @@ def natural_retouch(
 
     source_bytes = source.read_bytes()
     instruction = (
-        "Edit this portrait according to the selected beauty direction. Preserve identity, "
+        "Edit only subjects already present in this photograph. Never add people, faces, bodies, "
+        "objects or replace the scene. If no person is visible, ignore beauty/portrait requests "
+        "and apply only conservative tonal and color improvements to the existing scene. "
+        "If people are present, apply the selected beauty direction only to those existing people. "
+        "Preserve identity, "
         "age, expression, pose, anatomy, hair, clothing, framing and composition. Facial and "
         "body refinement is allowed only to the degree explicitly selected. Preserve realistic "
         "skin texture; reduce temporary blemishes and dark circles appropriately, with "

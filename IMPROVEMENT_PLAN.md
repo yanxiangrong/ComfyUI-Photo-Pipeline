@@ -70,6 +70,9 @@ deadline, bounded response bytes, restart recovery, cancellation semantics and d
 Never retry an ambiguous timed-out edit automatically, switch models, or reuse AI output as a cache.
 
 Current production retains the explicit synchronous Images Edit transport and 1200-second read timeout.
+An authenticated, non-generating OPTIONS probe of the relay returned HTTP 404 for both
+`/images/edits` and `/responses` on 2026-10-20. Since normal POST requests to these routes work,
+the OPTIONS results establish only that capability discovery is unavailable, not lack of async support.
 An HTTP read timeout measures idle reads, not a strict total wall-clock deadline. A future transport
 must add a total deadline as well. Streaming may improve progress visibility but cannot guarantee
 survival across gateway disconnects. Durable asynchronous support remains unverified for this relay.
