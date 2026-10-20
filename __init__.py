@@ -16,6 +16,7 @@ else:
         LemioCreateFinalPreview,
         LemioNaturalRetouch,
         LemioProcessPhoto,
+        LemioRetouchDirection,
         LemioValidateDevelopParameters,
     )
     from .nodes.prepare_photo import LemioPreparePhoto
@@ -27,6 +28,7 @@ else:
                 LemioUploadPhoto,
                 LemioPreparePhoto,
                 LemioCreatePreview,
+                LemioRetouchDirection,
                 LemioAnalyzePhoto,
                 LemioValidateDevelopParameters,
                 LemioProcessPhoto,

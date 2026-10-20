@@ -20,6 +20,7 @@ from .photo_types import (
     FinalPhoto,
     LemioPhotoError,
     ProcessedPhoto,
+    RetouchDirection,
     WorkingPhoto,
     safe_child,
     sha256_file,
@@ -40,6 +41,146 @@ SPECS = {
     "denoise": ("integer", 0, 100),
     "sharpen": ("integer", 0, 100),
 }
+
+PRESETS = {
+    "自然美颜": {
+        "description": (
+            "Invisible everyday beautification: fresh complexion, realistic skin and the "
+            "same recognizable person."
+        ),
+        "skin": "低",
+        "face": "低",
+        "body": "关闭",
+        "lighting": "低",
+    },
+    "清透写真": {
+        "description": (
+            "Clean and luminous portrait finish with fresh skin, gentle facial refinement "
+            "and bright, protected highlights."
+        ),
+        "skin": "中",
+        "face": "低",
+        "body": "低",
+        "lighting": "中",
+    },
+    "精致人像": {
+        "description": (
+            "Refined portrait retouch with polished skin, balanced facial contours and a "
+            "camera-ready finish that remains believable."
+        ),
+        "skin": "中",
+        "face": "中",
+        "body": "低",
+        "lighting": "中",
+    },
+    "商业形象": {
+        "description": (
+            "Professional commercial portrait with restrained skin cleanup, confident facial "
+            "definition, tidy posture and controlled studio-like light."
+        ),
+        "skin": "低",
+        "face": "低",
+        "body": "低",
+        "lighting": "高",
+    },
+    "全身塑形": {
+        "description": (
+            "Natural full-body beautification prioritizing posture, balanced silhouette and "
+            "subtle proportion refinement without an artificial body shape."
+        ),
+        "skin": "低",
+        "face": "低",
+        "body": "中",
+        "lighting": "中",
+    },
+    "高级精修": {
+        "description": (
+            "High-end beauty retouch with polished but textured skin, refined facial contours, "
+            "elegant silhouette and carefully shaped light."
+        ),
+        "skin": "高",
+        "face": "中",
+        "body": "中",
+        "lighting": "高",
+    },
+}
+LEVELS = {"关闭": "disabled", "低": "subtle", "中": "moderate", "高": "pronounced"}
+OVERRIDE_LEVELS = {"跟随模板", *LEVELS}
+BACKGROUNDS = {
+    "严格保持": "Keep the background pixel-faithful in content and structure.",
+    "轻微整理": (
+        "Keep the same background, but allow subtle cleanup of small temporary distractions; "
+        "never replace it or invent new objects."
+    ),
+}
+
+
+def make_retouch_direction(
+    preset: str = "自然美颜",
+    strength: str = "中",
+    skin: str = "跟随模板",
+    face: str = "跟随模板",
+    body: str = "跟随模板",
+    lighting: str = "跟随模板",
+    background: str = "严格保持",
+    custom_instructions: str = "",
+) -> RetouchDirection:
+    if preset not in PRESETS:
+        raise LemioPhotoError("Lemio · Retouch Direction: invalid preset")
+    if strength not in {"低", "中", "高"}:
+        raise LemioPhotoError("Lemio · Retouch Direction: invalid strength level")
+    levels = {"skin": skin, "face": face, "body": body, "lighting": lighting}
+    invalid = next((name for name, value in levels.items() if value not in OVERRIDE_LEVELS), None)
+    if invalid:
+        raise LemioPhotoError(f"Lemio · Retouch Direction: invalid {invalid} level")
+    if background not in BACKGROUNDS:
+        raise LemioPhotoError("Lemio · Retouch Direction: invalid background option")
+    custom = " ".join(str(custom_instructions).split())
+    if len(custom) > 1000:
+        raise LemioPhotoError("Lemio · Retouch Direction: custom instructions exceed 1000 chars")
+    return RetouchDirection(
+        preset, strength, skin, face, body, lighting, background, custom
+    )
+
+
+def retouch_direction_prompt(direction: RetouchDirection | None) -> str:
+    value = direction or make_retouch_direction()
+    value = make_retouch_direction(
+        value.preset,
+        value.strength,
+        value.skin,
+        value.face,
+        value.body,
+        value.lighting,
+        value.background,
+        value.custom_instructions,
+    )
+    preset = PRESETS[value.preset]
+
+    def resolved(name: str) -> str:
+        selected = getattr(value, name)
+        return preset[name] if selected == "跟随模板" else selected
+
+    parts = [
+        f"Selected beauty preset: {value.preset}. {preset['description']}",
+        f"Overall style strength: {LEVELS[value.strength]}.",
+        f"Skin beautification: {LEVELS[resolved('skin')]}; retain pores and real texture.",
+        (
+            f"Facial refinement: {LEVELS[resolved('face')]}; preserve identity, expression, "
+            "age and recognizable facial features. At enabled levels, only refine symmetry, "
+            "contours and feature presentation by the requested degree."
+        ),
+        (
+            f"Body beautification: {LEVELS[resolved('body')]}; preserve pose, anatomy and "
+            "clothing. At enabled levels, only improve posture, silhouette and proportions "
+            "by the requested degree; never create extreme slimming or enlargement."
+        ),
+        f"Light shaping: {LEVELS[resolved('lighting')]}.",
+        BACKGROUNDS[value.background],
+    ]
+    if value.custom_instructions:
+        parts.append(f"Additional user preference: {value.custom_instructions}")
+    return " ".join(parts)
 
 
 def _service_url(name: str, default: str | None = None) -> str:
@@ -144,11 +285,16 @@ def _bedrock_client():
     )
 
 
-def analyze_preview(tensor, client: httpx.Client | None = None) -> tuple[DevelopParameters, str]:
+def analyze_preview(
+    tensor,
+    client: httpx.Client | None = None,
+    direction: RetouchDirection | None = None,
+) -> tuple[DevelopParameters, str]:
     array = tensor[0].detach().cpu().numpy() if hasattr(tensor, "detach") else np.asarray(tensor)[0]
     image = Image.fromarray(np.clip(array * 255, 0, 255).astype(np.uint8), "RGB")
     buffer = io.BytesIO()
     image.save(buffer, "JPEG", quality=90)
+    direction_text = retouch_direction_prompt(direction)
     if _provider() == "bedrock":
         try:
             response = _bedrock_client().converse(
@@ -162,7 +308,8 @@ def analyze_preview(tensor, client: httpx.Client | None = None) -> tuple[Develop
                                     "Analyze this photograph conservatively for "
                                     "professional development. Preserve identity, geometry, "
                                     "pose, clothing, background and composition. "
-                                    "Call the supplied tool with the development plan."
+                                    "Call the supplied tool with the development plan. "
+                                    + direction_text
                                 )
                             },
                             {"image": {"format": "jpeg", "source": {"bytes": buffer.getvalue()}}},
@@ -209,7 +356,8 @@ def analyze_preview(tensor, client: httpx.Client | None = None) -> tuple[Develop
                             "Analyze exposure, white balance, dynamic range, noise, "
                             "sharpness and portrait needs. Return relative adjustments "
                             "only. Do not change identity, geometry, pose, clothing, "
-                            "background or composition."
+                            "background or composition. "
+                            + direction_text
                         ),
                     },
                     {"type": "input_image", "image_url": data_url, "detail": "high"},
@@ -311,16 +459,23 @@ def process_photo(
 
 
 def natural_retouch(
-    processed: ProcessedPhoto, prompt: str, processed_root: Path, final_root: Path, client=None
+    processed: ProcessedPhoto,
+    prompt: str,
+    processed_root: Path,
+    final_root: Path,
+    client=None,
+    direction: RetouchDirection | None = None,
 ):
     source = safe_child(processed_root, processed.path)
     source_bytes = source.read_bytes()
     instruction = (
-        "Edit this photograph naturally and conservatively. Preserve identity, facial "
-        "geometry, age, body shape, pose, hair, clothing, background, framing and "
-        "composition. Preserve realistic skin texture; only reduce temporary blemishes "
-        "and dark circles subtly, with slight eye/teeth cleanup "
-        f"when appropriate. Additional analysis: {prompt[:4000]}"
+        "Edit this portrait according to the selected beauty direction. Preserve identity, "
+        "age, expression, pose, anatomy, hair, clothing, framing and composition. Facial and "
+        "body refinement is allowed only to the degree explicitly selected. Preserve realistic "
+        "skin texture; reduce temporary blemishes and dark circles appropriately, with "
+        "eye/teeth cleanup "
+        f"when appropriate. {retouch_direction_prompt(direction)} "
+        f"Photo-specific analysis: {prompt[:4000]}"
     )
     if _provider() == "bedrock":
         try:

@@ -13,8 +13,10 @@ from nodes.full_pipeline_service import (
     SPECS,
     analyze_preview,
     archive_photo,
+    make_retouch_direction,
     natural_retouch,
     process_photo,
+    retouch_direction_prompt,
     validate_develop,
 )
 from nodes.photo_types import DevelopParameters, LemioPhotoError, WorkingPhoto
@@ -66,6 +68,30 @@ def test_validate_develop_strict():
         validate_develop(invalid)
 
 
+def test_retouch_direction_presets_and_levels():
+    direction = make_retouch_direction(
+        "全身塑形", "高", "低", "中", "高", "中", "严格保持", "保留面部雀斑"
+    )
+    prompt = retouch_direction_prompt(direction)
+    assert "全身塑形" in prompt
+    assert "Overall style strength: pronounced" in prompt
+    assert "Skin beautification: subtle" in prompt
+    assert "Facial refinement: moderate" in prompt
+    assert "Body beautification: pronounced" in prompt
+    assert "保留面部雀斑" in prompt
+
+    with pytest.raises(LemioPhotoError, match="invalid preset"):
+        make_retouch_direction(preset="不存在")
+    with pytest.raises(LemioPhotoError, match="invalid skin"):
+        make_retouch_direction(skin="极高")
+    with pytest.raises(LemioPhotoError, match="1000"):
+        make_retouch_direction(custom_instructions="x" * 1001)
+
+    default_prompt = retouch_direction_prompt(make_retouch_direction("自然美颜"))
+    assert "Facial refinement: subtle" in default_prompt
+    assert "Body beautification: disabled" in default_prompt
+
+
 def test_openai_analysis_structured_output(monkeypatch):
     monkeypatch.setenv("PHOTO_AI_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "test-only")
@@ -76,10 +102,13 @@ def test_openai_analysis_structured_output(monkeypatch):
         assert body["store"] is False
         assert body["text"]["format"]["strict"] is True
         assert body["input"][0]["content"][1]["image_url"].startswith("data:image/jpeg;base64,")
+        assert "Clean and luminous portrait" in body["input"][0]["content"][0]["text"]
         return httpx.Response(200, json={"output_text": json.dumps(planned)})
 
     params, prompt = analyze_preview(
-        np.zeros((1, 32, 64, 3), dtype=np.float32), client=mock_client(handler)
+        np.zeros((1, 32, 64, 3), dtype=np.float32),
+        client=mock_client(handler),
+        direction=make_retouch_direction("清透写真"),
     )
     assert params.values == neutral()
     assert params.analysis == "balanced"
@@ -122,6 +151,9 @@ def test_openai_retouch_and_archive(monkeypatch, tmp_path, jpeg_bytes):
         assert b'name="image"' in body
         assert b'name="input_fidelity"' in body
         assert b"high" in body
+        assert b"High-end beauty retouch" in body
+        assert b"Facial refinement: moderate" in body
+        assert b"Body beautification: moderate" in body
         assert b"\xff\xd8\xff" in body
         return httpx.Response(200, json={"data": [{"b64_json": base64.b64encode(image).decode()}]})
 
@@ -131,6 +163,7 @@ def test_openai_retouch_and_archive(monkeypatch, tmp_path, jpeg_bytes):
         processed_root,
         tmp_path / "final",
         mock_client(edit_handler),
+        make_retouch_direction("高级精修"),
     )
 
     working_root = tmp_path / "working"

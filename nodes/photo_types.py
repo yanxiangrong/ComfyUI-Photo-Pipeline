@@ -63,6 +63,18 @@ class DevelopParameters:
 
 
 @dataclass(frozen=True, slots=True)
+class RetouchDirection:
+    preset: str
+    strength: str
+    skin: str
+    face: str
+    body: str
+    lighting: str
+    background: str
+    custom_instructions: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class ProcessedPhoto:
     path: str
     filename: str

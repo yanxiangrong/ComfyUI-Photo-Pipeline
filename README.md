@@ -8,6 +8,8 @@ ComfyUI Photo Pipeline adds a memory-conscious, end-to-end photo workflow to the
 flowchart LR
   A[Lemio · Upload Photo] -->|LEMIO_SOURCE_PHOTO| B[Lemio · Prepare Photo]
   B -->|LEMIO_WORKING_PHOTO| C[Lemio · Create Preview]
+  R[Lemio · Retouch Direction] --> D
+  R --> G
   C -->|IMAGE| D[Lemio · Analyze Photo]
   D --> E[Lemio · Validate Develop Parameters]
   E --> F[Lemio · Process Photo]
@@ -46,6 +48,7 @@ Accepts `LEMIO_WORKING_PHOTO`; `max_width` defaults to 1600 and `max_height` to 
 
 ### Analysis, development, retouch, and archive
 
+- **Lemio · Retouch Direction** provides ready-to-use beauty presets: `自然美颜`, `清透写真`, `精致人像`, `商业形象`, `全身塑形`, and `高级精修`. Controls use clear low/medium/high levels instead of numeric sliders. Skin, facial refinement, body shaping, and lighting can follow the tuned preset or be overridden. Facial and body changes preserve identity, expression, pose, anatomy, clothing, framing, and realistic skin; extreme reshaping is explicitly prohibited.
 - **Lemio · Analyze Photo** sends only the bounded preview to either an OpenAI-compatible Responses API or Amazon Bedrock Converse and returns strict schema-v1 parameters plus a retouch prompt.
 - **Lemio · Validate Develop Parameters** independently rejects missing, extra, mistyped, non-enum, or out-of-range fields.
 - **Lemio · Process Photo** posts the unchanged working JPEG and validated JSON to `${PHOTO_PROCESSOR_URL}/process` and preserves the returned JPEG bytes.
@@ -104,8 +107,9 @@ For Amazon Bedrock, set `PHOTO_AI_PROVIDER=bedrock`, `AWS_REGION`, `BEDROCK_ANAL
 
 1. Restart the ComfyUI container after installation and environment changes.
 2. Load `examples/Lemio Full Photo Pipeline.json`, or add the nodes shown in the workflow diagram.
-3. Choose or drop a photo, then queue the prompt from **Lemio · Archive Photo** or **Preview Image**.
-4. For the defaults, confirm the displayed preview is no larger than 1600 × 1200.
+3. Select a beauty template in **Lemio · Retouch Direction**. Keep individual controls on `跟随模板`, or override skin, face, body, and lighting with `关闭`/`低`/`中`/`高`.
+4. Choose or drop a photo, then queue the prompt from **Lemio · Archive Photo** or **Preview Image**.
+5. For the defaults, confirm the displayed preview is no larger than 1600 × 1200.
 
 ## Storage and cleanup
 

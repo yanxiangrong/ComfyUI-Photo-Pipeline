@@ -7,19 +7,81 @@ import folder_paths
 from comfy_api.latest import io
 
 from .full_pipeline_service import (
+    PRESETS,
     analyze_preview,
     archive_photo,
+    make_retouch_direction,
     natural_retouch,
     process_photo,
     validate_develop,
 )
-from .photo_types import DevelopParameters, FinalPhoto, ProcessedPhoto, WorkingPhoto
+from .photo_types import (
+    DevelopParameters,
+    FinalPhoto,
+    ProcessedPhoto,
+    RetouchDirection,
+    WorkingPhoto,
+)
 from .preview_service import create_preview
 
 DEVELOP = io.Custom("LEMIO_DEVELOP_PARAMETERS")
 WORKING = io.Custom("LEMIO_WORKING_PHOTO")
 PROCESSED = io.Custom("LEMIO_PROCESSED_PHOTO")
 FINAL = io.Custom("LEMIO_FINAL_PHOTO")
+DIRECTION = io.Custom("LEMIO_RETOUCH_DIRECTION")
+
+
+class LemioRetouchDirection(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="LemioRetouchDirection",
+            display_name="Lemio · Retouch Direction",
+            category="Lemio/Photo Pipeline",
+            inputs=[
+                io.Combo.Input("preset", options=list(PRESETS), default="自然美颜"),
+                io.Combo.Input("strength", options=["低", "中", "高"], default="中"),
+                io.Combo.Input(
+                    "skin", options=["跟随模板", "低", "中", "高"], default="跟随模板"
+                ),
+                io.Combo.Input(
+                    "face",
+                    options=["跟随模板", "关闭", "低", "中", "高"],
+                    default="跟随模板",
+                ),
+                io.Combo.Input(
+                    "body",
+                    options=["跟随模板", "关闭", "低", "中", "高"],
+                    default="跟随模板",
+                ),
+                io.Combo.Input(
+                    "lighting", options=["跟随模板", "低", "中", "高"], default="跟随模板"
+                ),
+                io.Combo.Input(
+                    "background", options=["严格保持", "轻微整理"], default="严格保持"
+                ),
+                io.String.Input(
+                    "custom_instructions",
+                    multiline=True,
+                    default="",
+                    placeholder="可选：例如保留雀斑、不要美白",
+                ),
+            ],
+            outputs=[DIRECTION.Output("retouch_direction"), io.String.Output("summary")],
+        )
+
+    @classmethod
+    def execute(
+        cls, preset, strength, skin, face, body, lighting, background, custom_instructions
+    ):
+        result = make_retouch_direction(
+            preset, strength, skin, face, body, lighting, background, custom_instructions
+        )
+        summary = (
+            f"{preset} · 整体{strength} · 肤质{skin} · 脸部{face} · "
+            f"美体{body} · 光影{lighting} · 背景{background}"
+        )
+        return io.NodeOutput(result, summary)
 
 
 class LemioAnalyzePhoto(io.ComfyNode):
@@ -29,7 +91,10 @@ class LemioAnalyzePhoto(io.ComfyNode):
             node_id="LemioAnalyzePhoto",
             display_name="Lemio · Analyze Photo",
             category="Lemio/Photo Pipeline",
-            inputs=[io.Image.Input("preview")],
+            inputs=[
+                io.Image.Input("preview"),
+                DIRECTION.Input("retouch_direction", optional=True),
+            ],
             outputs=[
                 DEVELOP.Output("develop_parameters"),
                 io.String.Output("retouch_prompt"),
@@ -38,8 +103,8 @@ class LemioAnalyzePhoto(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, preview):
-        params, prompt = analyze_preview(preview)
+    def execute(cls, preview, retouch_direction: RetouchDirection | None = None):
+        params, prompt = analyze_preview(preview, direction=retouch_direction)
         return io.NodeOutput(params, prompt, params.analysis)
 
 
@@ -101,14 +166,26 @@ class LemioNaturalRetouch(io.ComfyNode):
             inputs=[
                 PROCESSED.Input("processed_photo"),
                 io.String.Input("retouch_prompt", multiline=True),
+                DIRECTION.Input("retouch_direction", optional=True),
             ],
             outputs=[FINAL.Output("final_photo"), io.String.Output("filename")],
             not_idempotent=True,
         )
 
     @classmethod
-    def execute(cls, processed_photo: ProcessedPhoto, retouch_prompt: str):
-        result = natural_retouch(processed_photo, retouch_prompt, _processed_root(), _final_root())
+    def execute(
+        cls,
+        processed_photo: ProcessedPhoto,
+        retouch_prompt: str,
+        retouch_direction: RetouchDirection | None = None,
+    ):
+        result = natural_retouch(
+            processed_photo,
+            retouch_prompt,
+            _processed_root(),
+            _final_root(),
+            direction=retouch_direction,
+        )
         return io.NodeOutput(result, result.filename)
 
 
