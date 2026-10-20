@@ -32,8 +32,10 @@ This is the source-of-truth implementation status for the ComfyUI photo workflow
 ## Remaining production checks
 
 - Run and visually compare the same real portrait with `自然美颜`, `全身塑形`, and `高级精修`.
-- Record one complete production run using one development review, including initial and final parameter JSON.
-- Confirm a reopened saved workflow retains Retouch Direction and feedback-mode widget values.
+- Completed: production generated half-body portrait run with one development review, initial/final
+  parameters, semantic quality and archive `20261020171756-7876` (see ACCEPTANCE.md).
+- Completed: restart plus saved widget/source persistence checked through the ComfyUI queue. Browser
+  interaction and the operator's own real portrait collection remain to be evaluated.
 - Run the latest full workflow with a real PNG and the operator's current camera RAW format.
 - Redeploy `photo-archive` from its published immutable image rather than relying on its earlier emergency hot patch.
 

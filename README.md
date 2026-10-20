@@ -5,6 +5,8 @@ ComfyUI Photo Pipeline adds a memory-conscious, end-to-end photo workflow to the
 Current implementation and remaining production acceptance items are tracked in [PROJECT_PLAN.md](PROJECT_PLAN.md).
 
 Design-only improvements and async transport research are recorded in [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md).
+Production evidence is in [ACCEPTANCE.md](ACCEPTANCE.md); update instructions are in
+[DEPLOYMENT.md](DEPLOYMENT.md).
 Final retouching automatically checks checksums, image decoding, dimensions and image collapse.
 Warnings and the processing history are archived in version-2 `parameters.json`; final develop
 parameters are under `develop`, with template/model information under `retouch`. Historical flat

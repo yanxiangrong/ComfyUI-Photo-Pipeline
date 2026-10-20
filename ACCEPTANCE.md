@@ -16,6 +16,13 @@ Detailed results, initial/final parameters and source references are saved priva
 | JPG / natural beauty | Passed, 101.18 seconds | `20261020170757-7277` |
 | PNG / high-end retouch | Transport passed; visual FAILED (added person to landscape) | `20261020171001-7401` |
 | Real Nikon NEF / natural beauty | Transport passed, 79.87 seconds | `20261020171120-7480` |
+| Generated half-body portrait / natural beauty | Full pipeline and semantic quality passed, 219.63 seconds | `20261020171756-7876` |
+
+The first three rows are format/transport tests using non-portrait fixtures, not beauty acceptance.
+The portrait fixture is an existing generated adult half-body image. The final portrait was also
+visually inspected: the same composition, clothing and recognizable subject are retained, with mild
+tonal/skin changes. This single sample does not establish template calibration or full-body quality.
+Both checksums were independently verified against the actual portrait archive files.
 
 For the JPG archive, the actual saved working/final bytes match the manifest SHA-256 values.
 The manifest contains beauty direction and one development review. Quality warnings are preserved
@@ -23,6 +30,11 @@ for inspection; warnings do not certify visual identity or anatomy. A warning is
 
 The full workflow is saved under the ComfyUI user's workflows with a persistent source reference,
 template and feedback mode. The previous saved workflow was backed up before replacement.
+After restarting ComfyUI, source metadata/checksum validation and Prepare → Preview → built-in
+Preview Image succeeded through the actual ComfyUI queue. The saved preset remains `自然美颜` and
+feedback mode `一次`. The saved full canvas now references the portrait fixture. Restart evidence is
+stored privately as `output/lemio_acceptance/restart-acceptance.json`; portrait processing evidence is
+stored as `output/lemio_acceptance/portrait-acceptance.json`.
 
 Pending acceptance is not counted as passed: visual comparison of face/body templates, multiple
 people, the operator's own camera format, browser rendering and near-20-minute timeout behavior.
