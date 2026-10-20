@@ -136,7 +136,11 @@ def _bedrock_client():
     return boto3.client(
         "bedrock-runtime",
         region_name=os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION", "us-east-1")),
-        config=Config(connect_timeout=10, read_timeout=600, retries={"max_attempts": 2}),
+        config=Config(
+            connect_timeout=10,
+            read_timeout=float(os.getenv("PHOTO_RETOUCH_READ_TIMEOUT_SECONDS", "1200")),
+            retries={"max_attempts": 2},
+        ),
     )
 
 
@@ -148,7 +152,7 @@ def analyze_preview(tensor, client: httpx.Client | None = None) -> tuple[Develop
     if _provider() == "bedrock":
         try:
             response = _bedrock_client().converse(
-                modelId=os.getenv("BEDROCK_ANALYSIS_MODEL", "us.amazon.nova-lite-v1:0"),
+                modelId=os.getenv("BEDROCK_ANALYSIS_MODEL", "us.openai.gpt-6.1-sol"),
                 messages=[
                     {
                         "role": "user",
@@ -320,31 +324,47 @@ def natural_retouch(
     )
     if _provider() == "bedrock":
         try:
+            model = os.getenv(
+                "BEDROCK_RETOUCH_MODEL", "us.stability.stable-style-transfer-v1:0"
+            )
             with Image.open(io.BytesIO(source_bytes)) as original:
                 width, height = original.size
+                prepared = original.convert("RGB")
+                canvas_input = io.BytesIO()
+                prepared.save(canvas_input, "JPEG", quality=95)
+            encoded_input = base64.b64encode(canvas_input.getvalue()).decode()
+            if "stable-style-transfer" in model:
+                request = {
+                    "init_image": encoded_input,
+                    "style_image": encoded_input,
+                    "prompt": instruction[:10000],
+                    "change_strength": 0.1,
+                    "output_format": "jpeg",
+                }
+            else:
                 scale = min(1.0, (4190000 / (width * height)) ** 0.5, 4096 / max(width, height))
                 width = max(320, int(width * scale) // 16 * 16)
                 height = max(320, int(height * scale) // 16 * 16)
-                prepared = original.convert("RGB")
                 prepared.thumbnail((width, height), Image.Resampling.LANCZOS)
-                canvas_input = io.BytesIO()
-                prepared.save(canvas_input, "JPEG", quality=95)
-            request = {
-                "taskType": "IMAGE_VARIATION",
-                "imageVariationParams": {
-                    "images": [base64.b64encode(canvas_input.getvalue()).decode()],
-                    "text": instruction,
-                    "similarityStrength": 0.9,
-                },
-                "imageGenerationConfig": {
-                    "numberOfImages": 1,
-                    "quality": "premium",
-                    "width": width,
-                    "height": height,
-                },
-            }
-            response = _bedrock_client().invoke_model(
-                modelId=os.getenv("BEDROCK_RETOUCH_MODEL", "amazon.nova-canvas-v1:0"),
+                resized = io.BytesIO()
+                prepared.save(resized, "JPEG", quality=95)
+                request = {
+                    "taskType": "IMAGE_VARIATION",
+                    "imageVariationParams": {
+                        "images": [base64.b64encode(resized.getvalue()).decode()],
+                        "text": instruction,
+                        "similarityStrength": 0.9,
+                    },
+                    "imageGenerationConfig": {
+                        "numberOfImages": 1,
+                        "quality": "premium",
+                        "width": width,
+                        "height": height,
+                    },
+                }
+            bedrock = client or _bedrock_client()
+            response = bedrock.invoke_model(
+                modelId=model,
                 body=json.dumps(request),
                 accept="application/json",
                 contentType="application/json",

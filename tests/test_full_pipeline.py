@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import json
 
 import httpx
@@ -150,3 +151,31 @@ def test_openai_retouch_and_archive(monkeypatch, tmp_path, jpeg_bytes):
         mock_client(archive_handler),
     )
     assert relative == "2026-01-01-000000-test"
+
+
+def test_bedrock_style_transfer_retouch(monkeypatch, tmp_path, jpeg_bytes):
+    monkeypatch.setenv("PHOTO_AI_PROVIDER", "bedrock")
+    monkeypatch.setenv(
+        "BEDROCK_RETOUCH_MODEL", "us.stability.stable-style-transfer-v1:0"
+    )
+    image = jpeg_bytes((64, 32))
+    processed_root = tmp_path / "processed"
+    processed = working(processed_root, image, (64, 32))
+
+    class Bedrock:
+        def invoke_model(self, **kwargs):
+            assert kwargs["modelId"] == "us.stability.stable-style-transfer-v1:0"
+            request = json.loads(kwargs["body"])
+            assert request["init_image"] == request["style_image"]
+            assert request["change_strength"] == 0.1
+            payload = {"images": [base64.b64encode(image).decode()]}
+            return {"body": io.BytesIO(json.dumps(payload).encode())}
+
+    final = natural_retouch(
+        processed,
+        "subtle",
+        processed_root,
+        tmp_path / "final",
+        Bedrock(),
+    )
+    assert (tmp_path / "final" / final.path).read_bytes() == image
