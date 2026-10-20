@@ -726,10 +726,8 @@ def natural_retouch(
 
     source_bytes = source.read_bytes()
     instruction = (
-        "Edit only subjects already present in this photograph. Never add people, faces, bodies, "
-        "objects or replace the scene. If no person is visible, ignore beauty/portrait requests "
-        "and apply only conservative tonal and color improvements to the existing scene. "
-        "If people are present, apply the selected beauty direction only to those existing people. "
+        "Retouch the existing people in this portrait according to the selected beauty direction. "
+        "Preserve the number of people, clothing and scene. "
         "Preserve identity, "
         "age, expression, pose, anatomy, hair, clothing, framing and composition. Facial and "
         "body refinement is allowed only to the degree explicitly selected. Preserve realistic "

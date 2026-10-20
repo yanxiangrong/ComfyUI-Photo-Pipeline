@@ -29,8 +29,8 @@ people, the operator's own camera format, browser rendering and near-20-minute t
 Template calibration remains a documentation-only plan as requested; this release is not a claim
 that all six presets have been visually calibrated.
 
-Visual inspection found a critical limitation: the high-end beauty prompt invented a person in a
-harbor landscape. Pixel checks did not detect this semantic change. The prompt has been strengthened
-to forbid adding people or objects and to restrict non-portrait inputs to tonal/color improvements.
-This is a prompt mitigation, not a certified semantic guard. This historical test archive remains as
-failure evidence and must not be presented as a validated beauty result.
+Visual inspection of the out-of-scope harbor fixture showed a generated person. It is retained only
+as evidence that pixel statistics do not certify semantic fidelity. The product scope is portraits;
+no landscape routing or non-portrait feature is being developed. Relevant quality checks compare
+existing people, scene fidelity and obvious anatomical defects. These are probabilistic checks.
+This historical test archive must not be presented as validated portrait beauty output.

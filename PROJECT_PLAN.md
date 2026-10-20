@@ -7,6 +7,8 @@ This is the source-of-truth implementation status for the ComfyUI photo workflow
 - Version-2 archive manifest with development review history, beauty settings, model identifiers,
   hashes, durations and automatic final-image quality report.
 - Automatic final checksum/decode/dimension/collapse checks; aspect and large-difference warnings.
+- A final vision comparison blocks obvious changes in people count, scene replacement and severe
+  anatomical defects; this is an additional analysis call, not a biometric guarantee.
 - Documentation-only enhancement designs and asynchronous transport research in IMPROVEMENT_PLAN.md.
 
 - Persistent JPG, PNG, and camera RAW upload references.

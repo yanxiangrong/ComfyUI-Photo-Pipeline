@@ -16,6 +16,10 @@ This does not detect identity drift, bad hands, distorted clothing or anatomical
 
 ## Beauty template calibration — documentation only
 
+Scope clarification: this product processes portraits. Do not expand non-portrait routing or landscape
+handling. Format/RAW fixtures without people verify transport only; they do not qualify as beauty or
+body-shaping acceptance. Prioritize consenting portrait fixtures and real half/full-body evaluation.
+
 Build a consented evaluation set covering close-up, half-body, full-body, multiple people, different
 skin tones, lighting, ages and clothing. Render each of the six templates against the same source,
 then compare face/body low, medium and high independently. Record model, prompt version, settings,

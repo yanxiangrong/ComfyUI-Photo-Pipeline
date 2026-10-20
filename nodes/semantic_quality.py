@@ -25,7 +25,6 @@ def semantic_quality(final, reference, final_root, reference_root, client=None):
         "Report added or removed people, replacement of the main scene, or obvious severe anatomy "
         "defects. Normal skin cleanup, moderate face/body refinement, exposure/color improvements "
         "and resolution changes are permitted. Only mark a failure when clearly visible. "
-        "Never treat adding a portrait to a landscape as valid retouching. "
         "Return the supplied schema."
     )
     flags = ["people_added_or_removed", "main_scene_replaced", "severe_anatomy_defect"]
