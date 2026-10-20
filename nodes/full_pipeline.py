@@ -201,6 +201,33 @@ class LemioDevelopWithFeedback(io.ComfyNode):
         return io.NodeOutput(processed, final_parameters, status)
 
 
+class LemioCreateProcessedPreview(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="LemioCreateProcessedPreview",
+            display_name="Lemio · Create Processed Preview",
+            category="Lemio/Photo Pipeline",
+            inputs=[
+                PROCESSED.Input("processed_photo"),
+                io.Int.Input("max_width", default=1600, min=64, max=4096),
+                io.Int.Input("max_height", default=1200, min=64, max=4096),
+            ],
+            outputs=[
+                io.Image.Output("preview"),
+                io.Int.Output("width"),
+                io.Int.Output("height"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, processed_photo: ProcessedPhoto, max_width: int, max_height: int):
+        image, width, height = create_preview(
+            processed_photo, _processed_root(), max_width, max_height
+        )
+        return io.NodeOutput(image, width, height)
+
+
 class LemioNaturalRetouch(io.ComfyNode):
     @classmethod
     def define_schema(cls):
