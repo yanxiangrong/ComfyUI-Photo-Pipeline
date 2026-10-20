@@ -843,6 +843,8 @@ def _save_final(content: bytes, final_root: Path) -> FinalPhoto:
 def archive_photo(working, final, params, working_root, final_root, execution_id, client=None):
     working_path = safe_child(working_root, working.path)
     final_path = safe_child(final_root, final.path)
+    if sha256_file(final_path) != final.sha256 or sha256_file(working_path) != working.sha256:
+        raise LemioPhotoError("Lemio · Archive Photo: artifact checksum changed before archive")
     quality = final.provenance.get("quality") or validate_retouch_result(
         final, working, final_root, working_root
     )

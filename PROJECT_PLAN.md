@@ -4,6 +4,11 @@ This is the source-of-truth implementation status for the ComfyUI photo workflow
 
 ## Implemented
 
+- Version-2 archive manifest with development review history, beauty settings, model identifiers,
+  hashes, durations and automatic final-image quality report.
+- Automatic final checksum/decode/dimension/collapse checks; aspect and large-difference warnings.
+- Documentation-only enhancement designs and asynchronous transport research in IMPROVEMENT_PLAN.md.
+
 - Persistent JPG, PNG, and camera RAW upload references.
 - `/prepare` working JPEG with byte-preserving storage and bounded ComfyUI previews.
 - Schema-constrained AI development analysis and independent parameter validation.
