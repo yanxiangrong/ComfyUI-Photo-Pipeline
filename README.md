@@ -2,6 +2,8 @@
 
 ComfyUI Photo Pipeline adds a memory-conscious, end-to-end photo workflow to the ComfyUI canvas. It uploads and prepares a photo, asks a vision model for schema-constrained development parameters, calls RawTherapee through `photo-processor`, performs conservative natural AI retouching, generates a safe final filename, previews the result, and archives the working JPEG, parameters, and final image.
 
+Current implementation and remaining production acceptance items are tracked in [PROJECT_PLAN.md](PROJECT_PLAN.md).
+
 ## Workflow
 
 ```mermaid
@@ -12,7 +14,7 @@ flowchart LR
   R --> G
   C -->|IMAGE| D[Lemio · Analyze Photo]
   D --> E[Lemio · Validate Develop Parameters]
-  E --> F[Lemio · Process Photo]
+  E --> F[Lemio · Develop With Feedback]
   F --> G[Lemio · Natural Retouch]
   G --> H[Lemio · Create Final Preview]
   H --> I[Preview Image]
@@ -51,7 +53,8 @@ Accepts `LEMIO_WORKING_PHOTO`; `max_width` defaults to 1600 and `max_height` to 
 - **Lemio · Retouch Direction** provides ready-to-use beauty presets: `自然美颜`, `清透写真`, `精致人像`, `商业形象`, `全身塑形`, and `高级精修`. Controls use clear low/medium/high levels instead of numeric sliders. Skin, facial refinement, body shaping, and lighting can follow the tuned preset or be overridden. Facial and body changes preserve identity, expression, pose, anatomy, clothing, framing, and realistic skin; extreme reshaping is explicitly prohibited.
 - **Lemio · Analyze Photo** sends only the bounded preview to either an OpenAI-compatible Responses API or Amazon Bedrock Converse and returns strict schema-v1 parameters plus a retouch prompt.
 - **Lemio · Validate Develop Parameters** independently rejects missing, extra, mistyped, non-enum, or out-of-range fields.
-- **Lemio · Process Photo** posts the unchanged working JPEG and validated JSON to `${PHOTO_PROCESSOR_URL}/process` and preserves the returned JPEG bytes.
+- **Lemio · Process Photo** posts the unchanged working JPEG and validated JSON to `${PHOTO_PROCESSOR_URL}/process` and preserves the returned JPEG bytes. It remains available for workflows that do not need AI review.
+- **Lemio · Develop With Feedback** is the recommended replacement for Process Photo. It processes the original working JPEG, compares bounded original and developed previews plus objective clipping/luminance/edge metrics, and lets the analysis model accept or revise the complete validated parameters. Choose `关闭`, `一次` (default), or `最多两次`. Every revision is reapplied to the original working JPEG, never the previous JPEG, so iterations do not accumulate compression or adjustments. Natural Retouch still runs only once after development is accepted.
 - **Lemio · Natural Retouch** uses an OpenAI-compatible Images Edit endpoint or an image-editing model through Amazon Bedrock. Its fixed prompt preserves identity, geometry, age, pose, clothing, background, framing, and realistic skin texture.
 - **Lemio · Create Final Preview** converts only a bounded final preview to a tensor.
 - **Lemio · Archive Photo** sends working image, final image, canonical parameters, execution ID, and timestamp to `${PHOTO_ARCHIVE_URL}/archive`. It is an output node and intentionally creates a new append-only archive per execution.

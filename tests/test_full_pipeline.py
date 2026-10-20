@@ -9,17 +9,20 @@ import httpx
 import numpy as np
 import pytest
 
+import nodes.full_pipeline_service as pipeline_service
 from nodes.full_pipeline_service import (
     SPECS,
     analyze_preview,
     archive_photo,
+    develop_with_feedback,
     make_retouch_direction,
     natural_retouch,
     process_photo,
     retouch_direction_prompt,
+    review_develop,
     validate_develop,
 )
-from nodes.photo_types import DevelopParameters, LemioPhotoError, WorkingPhoto
+from nodes.photo_types import DevelopParameters, LemioPhotoError, ProcessedPhoto, WorkingPhoto
 
 
 def neutral():
@@ -136,6 +139,87 @@ def test_process_preserves_service_bytes(monkeypatch, tmp_path, jpeg_bytes):
         mock_client(handler),
     )
     assert (tmp_path / "processed" / result.path).read_bytes() == result_bytes
+
+
+def test_openai_develop_review_compares_both_images(monkeypatch, tmp_path, jpeg_bytes):
+    monkeypatch.setenv("PHOTO_AI_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+    working_root = tmp_path / "working"
+    processed_root = tmp_path / "processed"
+    original_bytes = jpeg_bytes((80, 40), (80, 90, 100))
+    processed_bytes = jpeg_bytes((80, 40), (110, 120, 130))
+    original = working(working_root, original_bytes)
+    processed_root.mkdir()
+    (processed_root / "processed.jpg").write_bytes(processed_bytes)
+    processed = ProcessedPhoto(
+        "processed.jpg",
+        "processed.jpg",
+        "image/jpeg",
+        len(processed_bytes),
+        80,
+        40,
+        hashlib.sha256(processed_bytes).hexdigest(),
+    )
+    revised = neutral() | {"exposure_ev": -0.2, "highlights": -15}
+
+    def handler(request):
+        body = json.loads(request.content)
+        content = body["input"][0]["content"]
+        assert sum(item["type"] == "input_image" for item in content) == 2
+        assert "Original metrics" in content[0]["text"]
+        assert body["store"] is False
+        return httpx.Response(
+            200,
+            json={
+                "output_text": json.dumps(
+                    {"decision": "revise", "develop": revised, "review": "reduce highlights"}
+                )
+            },
+        )
+
+    result, review, accepted = review_develop(
+        original,
+        processed,
+        DevelopParameters(neutral()),
+        working_root,
+        processed_root,
+        make_retouch_direction("自然美颜"),
+        mock_client(handler),
+    )
+    assert result.values == revised
+    assert review == "reduce highlights"
+    assert accepted is False
+
+
+def test_develop_feedback_reprocesses_original_and_stops(monkeypatch, tmp_path, jpeg_bytes):
+    working_root = tmp_path / "working"
+    processed_root = tmp_path / "processed"
+    original = working(working_root, jpeg_bytes())
+    calls = []
+
+    def fake_process(working_photo, params, source_root, output_root):
+        calls.append((working_photo.sha256, params.values["exposure_ev"]))
+        return ProcessedPhoto("x.jpg", "x.jpg", "image/jpeg", 1, 80, 40, str(len(calls)))
+
+    reviews = iter(
+        [
+            (DevelopParameters(neutral() | {"exposure_ev": 0.25}), "revised", False),
+            (DevelopParameters(neutral() | {"exposure_ev": 0.25}), "accepted", True),
+        ]
+    )
+    monkeypatch.setattr(pipeline_service, "process_photo", fake_process)
+    monkeypatch.setattr(pipeline_service, "review_develop", lambda *args: next(reviews))
+    processed, params, status = develop_with_feedback(
+        original,
+        DevelopParameters(neutral()),
+        "最多两次",
+        working_root,
+        processed_root,
+    )
+    assert calls == [(original.sha256, 0.0), (original.sha256, 0.25)]
+    assert params.values["exposure_ev"] == 0.25
+    assert processed.sha256 == "2"
+    assert "review 1: revised" in status and "review 2: accepted" in status
 
 
 def test_openai_retouch_and_archive(monkeypatch, tmp_path, jpeg_bytes):

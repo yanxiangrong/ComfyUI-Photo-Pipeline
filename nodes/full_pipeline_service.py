@@ -261,6 +261,220 @@ def _develop_schema() -> dict:
     }
 
 
+def _review_schema() -> dict:
+    develop = _develop_schema()["properties"]["develop"]
+    return {
+        "type": "object",
+        "properties": {
+            "decision": {"type": "string", "enum": ["accept", "revise"]},
+            "develop": develop,
+            "review": {"type": "string"},
+        },
+        "required": ["decision", "develop", "review"],
+        "additionalProperties": False,
+    }
+
+
+def _review_image(path: Path) -> tuple[bytes, dict[str, float]]:
+    try:
+        with Image.open(path) as source:
+            image = source.convert("RGB")
+            image.thumbnail((1600, 1200), Image.Resampling.LANCZOS)
+    except (OSError, UnidentifiedImageError) as exc:
+        raise LemioPhotoError("Lemio · Develop With Feedback: cannot read review image") from exc
+    array = np.asarray(image, dtype=np.float32)
+    luminance = 0.2126 * array[..., 0] + 0.7152 * array[..., 1] + 0.0722 * array[..., 2]
+    gray = luminance
+    horizontal = np.abs(gray[:, 1:] - gray[:, :-1])
+    vertical = np.abs(gray[1:, :] - gray[:-1, :])
+    metrics = {
+        "mean_luminance": round(float(luminance.mean()), 2),
+        "shadow_clip_percent": round(float((luminance <= 3).mean() * 100), 3),
+        "highlight_clip_percent": round(float((luminance >= 252).mean() * 100), 3),
+        "edge_strength": round(float((horizontal.mean() + vertical.mean()) / 2), 3),
+    }
+    buffer = io.BytesIO()
+    image.save(buffer, "JPEG", quality=90)
+    return buffer.getvalue(), metrics
+
+
+def review_develop(
+    working: WorkingPhoto,
+    processed: ProcessedPhoto,
+    params: DevelopParameters,
+    working_root: Path,
+    processed_root: Path,
+    direction: RetouchDirection | None = None,
+    client=None,
+) -> tuple[DevelopParameters, str, bool]:
+    current = validate_develop(params.values)
+    original_bytes, original_metrics = _review_image(safe_child(working_root, working.path))
+    processed_bytes, processed_metrics = _review_image(safe_child(processed_root, processed.path))
+    instruction = (
+        "Compare the original preview with the deterministically developed preview. Review only "
+        "exposure, white balance, highlights, shadows, contrast, color, denoise and sharpening. "
+        "Do not request face, body, background or generative edits here. Accept when the developed "
+        "image is technically balanced and suitable for the selected beauty direction. Revise only "
+        "clear problems, use conservative changes, and return a complete schema-v1 parameter set. "
+        "The processor always reapplies the complete parameters to the original working JPEG. "
+        f"Current parameters: {json.dumps(current, separators=(',', ':'))}. "
+        f"Original metrics: {json.dumps(original_metrics, separators=(',', ':'))}. "
+        f"Developed metrics: {json.dumps(processed_metrics, separators=(',', ':'))}. "
+        f"Beauty direction: {retouch_direction_prompt(direction)}"
+    )
+    if _provider() == "bedrock":
+        try:
+            bedrock = client or _bedrock_client()
+            response = bedrock.converse(
+                modelId=os.getenv("BEDROCK_ANALYSIS_MODEL", "us.openai.gpt-6.1-sol"),
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"text": instruction},
+                            {"text": "Original preview:"},
+                            {"image": {"format": "jpeg", "source": {"bytes": original_bytes}}},
+                            {"text": "Developed preview:"},
+                            {"image": {"format": "jpeg", "source": {"bytes": processed_bytes}}},
+                        ],
+                    }
+                ],
+                toolConfig={
+                    "tools": [
+                        {
+                            "toolSpec": {
+                                "name": "lemio_develop_review",
+                                "description": (
+                                    "Accept or conservatively revise development parameters"
+                                ),
+                                "inputSchema": {"json": _review_schema()},
+                            }
+                        }
+                    ],
+                    "toolChoice": {"tool": {"name": "lemio_develop_review"}},
+                },
+            )
+            blocks = response["output"]["message"]["content"]
+            parsed = next(block["toolUse"]["input"] for block in blocks if "toolUse" in block)
+        except Exception as exc:
+            raise LemioPhotoError(
+                "Lemio · Develop With Feedback: Amazon Bedrock review failed"
+            ) from exc
+    else:
+        key = os.getenv("OPENAI_API_KEY", "").strip()
+        if not key:
+            raise LemioPhotoError(
+                "Lemio · Develop With Feedback: OPENAI_API_KEY is not configured"
+            )
+        def data_url(value):
+            return "data:image/jpeg;base64," + base64.b64encode(value).decode()
+        body = {
+            "model": os.getenv("PHOTO_ANALYSIS_MODEL", "gpt-6-luna"),
+            "store": False,
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": instruction},
+                        {
+                            "type": "input_image",
+                            "image_url": data_url(original_bytes),
+                            "detail": "high",
+                        },
+                        {
+                            "type": "input_image",
+                            "image_url": data_url(processed_bytes),
+                            "detail": "high",
+                        },
+                    ],
+                }
+            ],
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "lemio_develop_review",
+                    "strict": True,
+                    "schema": _review_schema(),
+                }
+            },
+        }
+        own = client is None
+        http = client or httpx.Client(timeout=_timeout())
+        try:
+            response = http.post(
+                _service_url("OPENAI_BASE_URL", "https://api.openai.com/v1") + "/responses",
+                headers={"Authorization": f"Bearer {key}"},
+                json=body,
+            )
+            if not response.is_success:
+                raise LemioPhotoError(
+                    "Lemio · Develop With Feedback: OpenAI returned "
+                    f"HTTP {response.status_code}"
+                )
+            payload = response.json()
+            text = payload.get("output_text")
+            if not text:
+                for item in payload.get("output", []):
+                    for content in item.get("content", []):
+                        if content.get("type") == "output_text":
+                            text = content.get("text")
+                            break
+            if not text:
+                raise LemioPhotoError(
+                    "Lemio · Develop With Feedback: response contained no structured output"
+                )
+            parsed = json.loads(text)
+        except (httpx.HTTPError, ValueError, KeyError) as exc:
+            if isinstance(exc, LemioPhotoError):
+                raise
+            raise LemioPhotoError(
+                "Lemio · Develop With Feedback: review request or response validation failed"
+            ) from exc
+        finally:
+            if own:
+                http.close()
+    decision = parsed.get("decision")
+    if decision not in {"accept", "revise"}:
+        raise LemioPhotoError("Lemio · Develop With Feedback: invalid review decision")
+    review = str(parsed.get("review", "")).strip()[:2000]
+    if decision == "accept":
+        return DevelopParameters(current, params.analysis), review, True
+    revised = validate_develop(parsed.get("develop"))
+    return DevelopParameters(revised, params.analysis), review, revised == current
+
+
+def develop_with_feedback(
+    working: WorkingPhoto,
+    initial: DevelopParameters,
+    mode: str,
+    working_root: Path,
+    processed_root: Path,
+    direction: RetouchDirection | None = None,
+) -> tuple[ProcessedPhoto, DevelopParameters, str]:
+    review_counts = {"关闭": 0, "一次": 1, "最多两次": 2}
+    if mode not in review_counts:
+        raise LemioPhotoError("Lemio · Develop With Feedback: invalid review mode")
+    current = DevelopParameters(validate_develop(initial.values), initial.analysis)
+    processed = process_photo(working, current, working_root, processed_root)
+    messages = []
+    for index in range(review_counts[mode]):
+        revised, review, accepted = review_develop(
+            working,
+            processed,
+            current,
+            working_root,
+            processed_root,
+            direction,
+        )
+        messages.append(f"review {index + 1}: {review or ('accepted' if accepted else 'revised')}")
+        if accepted:
+            break
+        current = revised
+        processed = process_photo(working, current, working_root, processed_root)
+    status = "; ".join(messages) if messages else "feedback disabled"
+    return processed, current, status
+
+
 def _provider() -> str:
     provider = os.getenv("PHOTO_AI_PROVIDER", "openai").strip().lower()
     if provider not in {"openai", "bedrock"}:

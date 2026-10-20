@@ -10,6 +10,7 @@ from .full_pipeline_service import (
     PRESETS,
     analyze_preview,
     archive_photo,
+    develop_with_feedback,
     make_retouch_direction,
     natural_retouch,
     process_photo,
@@ -154,6 +155,50 @@ class LemioProcessPhoto(io.ComfyNode):
         return io.NodeOutput(
             result, f"{result.width}×{result.height}, {result.size / 1048576:.1f} MiB"
         )
+
+
+class LemioDevelopWithFeedback(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="LemioDevelopWithFeedback",
+            display_name="Lemio · Develop With Feedback",
+            category="Lemio/Photo Pipeline",
+            inputs=[
+                WORKING.Input("working_photo"),
+                DEVELOP.Input("develop_parameters"),
+                io.Combo.Input(
+                    "review_mode",
+                    options=["关闭", "一次", "最多两次"],
+                    default="一次",
+                ),
+                DIRECTION.Input("retouch_direction", optional=True),
+            ],
+            outputs=[
+                PROCESSED.Output("processed_photo"),
+                DEVELOP.Output("final_parameters"),
+                io.String.Output("review_status"),
+            ],
+            not_idempotent=True,
+        )
+
+    @classmethod
+    def execute(
+        cls,
+        working_photo: WorkingPhoto,
+        develop_parameters: DevelopParameters,
+        review_mode: str,
+        retouch_direction: RetouchDirection | None = None,
+    ):
+        processed, final_parameters, status = develop_with_feedback(
+            working_photo,
+            develop_parameters,
+            review_mode,
+            _working_root(),
+            _processed_root(),
+            retouch_direction,
+        )
+        return io.NodeOutput(processed, final_parameters, status)
 
 
 class LemioNaturalRetouch(io.ComfyNode):
